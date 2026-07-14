@@ -1,0 +1,56 @@
+name: Deploy FinOps Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write # Mandatory for Workload Identity Federation
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Pull the repository code down to the GitHub runner
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. Set up Python environment to validate script changes
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 3. Create the function source archive file dynamically
+      - name: Package Cloud Function Source
+        run: |
+          cd src
+          zip -r ../terraform/source.zip main.py requirements.txt
+          cd ..
+
+      # 4. Authenticate to Google Cloud securely (No Keys!)
+      - name: Authenticate to GCP via OIDC
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/YOUR_PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'github-actions-deployer@YOUR_PROJECT_://gserviceaccount.com'
+
+      # 5. Prepare the runner environment with HashiCorp Terraform CLI
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+
+      # 6. Initialize Terraform and connect to your GCS state bucket
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
+
+      # 7. Apply infrastructure changes directly to GCP
+      - name: Terraform Apply
+        run: |
+          cd terraform
+          terraform apply -auto-approve
